@@ -1,0 +1,66 @@
+
+  
+//Main{
+
+#include <LiquidCrystal.h>
+int val = 0;
+int *punt,cont;
+int analogpin = 0;
+int entryboton1 = 9;
+int estadoboton1 = 0;
+
+int estadobotonAnterior1 = 0; // Almacena el estado anterior del botón
+
+
+bool muestreoActivo =true;  // Flag para controlar el inicio/detención del muestreo
+LiquidCrystal led(12, 11, 5, 4, 3, 2);
+
+int* miFuncion(int *punt)
+{
+int size=1;
+int* arreglo = new int[size];
+for(int i = 0; i < size; ++i)
+ arreglo[i] =*punt;
+  size++;
+return arreglo;
+}
+
+void setup() {
+  pinMode(entryboton1, INPUT);
+  
+  led.begin(16, 2);
+  Serial.begin(9600);
+  punt = &val;// Asignar la dirección de val a punt
+  led.clear();
+  
+}
+
+void loop() {
+  int *arreglo= miFuncion(punt);
+  estadoboton1 = digitalRead(entryboton1); // Leer el estado del botón
+  
+  // Detectar cambio de estado (cuando se presiona el botón)
+  if (estadoboton1 == HIGH && estadobotonAnterior1 == LOW) {
+    muestreoActivo = !muestreoActivo; // Cambia el estado de muestreo (toggle)
+  }
+
+  // Si el muestreo está activo, tomar muestras
+  if (muestreoActivo) {
+    val = analogRead(analogpin); // Leer el valor del pin analógico
+    Serial.println(*arreglo);
+    Serial.println(*punt);
+    led.setCursor(0, 0);
+    led.print("valor: ");
+    led.print(*punt); // Imprimir el valor apuntado por punt
+  } else {
+    led.clear(); // Limpiar el LCD si no se está muestreando
+  }
+
+  estadobotonAnterior1 = estadoboton1; // Actualizar el estado anterior del botón
+   delay(200);// Pequeña pausa para evitar rebotes
+}
+
+
+//}
+//}
+  
