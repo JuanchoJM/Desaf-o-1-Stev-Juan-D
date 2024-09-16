@@ -1,0 +1,158 @@
+#include <LiquidCrystal.h>
+
+int val = 0, *punt;
+int analogpin = 0;
+int entryboton1 = 8, entryboton2 = 7;
+int cant_datos = 0, *pcant_datos, *punt_time, *punt_start; 
+int *punt_frec;
+float amplitudmayor, amplitudmenor, *punt_amplitudmayor, *punt_amplitudmenor;
+float amplitudVoltios, *punt_volt, valorMedio;
+int transcurrido, start = 0;
+int frec = 0;
+bool muestreoActivo1 = false, muestreoActivo2 = false;
+unsigned long tiempoInicioMuestreo = 0;
+const unsigned long DURACION_MUESTREO = 5000;  // 5 segundos
+LiquidCrystal led(12, 11, 5, 4, 3, 2);
+int* arreglo_datos = nullptr;
+
+// Variables para detección de cruces por el valor medio
+unsigned long tiempoUltimoCruceMedio = 0;
+unsigned long intervaloFrecuenciaMedio = 0;
+bool cruzoPorMedioAnterior = false;
+
+// Función para agregar un dato al arreglo dinámico
+void agregarDato(int* punt) {
+  int* nuevo_arreglo = new int[(*pcant_datos) + 1];
+  for (int i = 0; i < *pcant_datos; i++) {
+    nuevo_arreglo[i] = arreglo_datos[i];
+  }
+  nuevo_arreglo[*pcant_datos] = *punt;
+  (*pcant_datos)++;
+  delete[] arreglo_datos;
+  arreglo_datos = nuevo_arreglo;
+}
+
+// Función para imprimir los valores almacenados en el arreglo
+void imprimirArreglo() {
+  Serial.print("Valores almacenados: ");
+  for (int i = 0; i < *pcant_datos; i++) {
+    Serial.print(arreglo_datos[i]);
+    if (i < (*pcant_datos) - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.println();
+}
+
+// Función para actualizar los valores máximo y mínimo en el arreglo
+void actualizarMaximoMinimo(int* arreglo, int tamano, float* maximo, float* minimo) {
+  *maximo = arreglo[0];
+  *minimo = arreglo[0];
+  
+  for (int i = 1; i < tamano; i++) {
+    if (arreglo[i] > *maximo) {
+      *maximo = arreglo[i];
+    }
+    if (arreglo[i] < *minimo) {
+      *minimo = arreglo[i];
+    }
+  }
+}
+
+// Función para detectar cruce por el valor medio
+void detectarCrucePorMedio(int *valor_actual) {
+  static int valorAnterior = 0;
+  bool cruzoPorMedio = false;
+  
+  // Detectar si cruzó el valor medio
+  if ((valorAnterior < valorMedio && *valor_actual >= valorMedio) || (valorAnterior > valorMedio && *valor_actual <= valorMedio)) {
+    cruzoPorMedio = true;
+  }
+
+  if (cruzoPorMedio && !cruzoPorMedioAnterior) {
+    unsigned long tiempoActual = millis();
+    intervaloFrecuenciaMedio = tiempoActual - tiempoUltimoCruceMedio;
+    tiempoUltimoCruceMedio = tiempoActual;
+    *punt_frec = 1000.0 / intervaloFrecuenciaMedio;  // Convertir a Hz
+  }
+
+  cruzoPorMedioAnterior = cruzoPorMedio;
+  valorAnterior = *valor_actual;
+}
+
+void setup() {
+  pinMode(entryboton1, INPUT_PULLUP);
+  pinMode(entryboton2, INPUT_PULLUP);
+  led.begin(16, 2);
+  Serial.begin(9600);
+  punt = &val;
+  pcant_datos = &cant_datos;
+  punt_frec = &frec;
+  punt_volt = &amplitudVoltios;
+  punt_time = &transcurrido;
+  punt_start = &start;
+  punt_amplitudmayor = &amplitudmayor;
+  punt_amplitudmenor = &amplitudmenor;
+  led.clear();
+}
+
+void loop() {
+
+  // Botón 1: tomar muestras durante 5 segundos
+  if (digitalRead(entryboton1) == LOW) {
+    muestreoActivo1 = !muestreoActivo1;
+    tiempoInicioMuestreo = millis();  // Iniciar el muestreo
+    
+  }
+
+  if (muestreoActivo1) {
+    *punt = analogRead(analogpin);  // Leer el valor del pin analógico
+    detectarCrucePorMedio(punt);  // Detectar cruces por el valor medio
+    Serial.println(*punt);
+    led.setCursor(0, 0);
+    led.print("Capt datos: ");
+    led.setCursor(0,1);
+    led.print(*punt);
+    
+    agregarDato(punt);  // Almacenar el valor leído
+    imprimirArreglo();  // Imprimir los valores almacenados
+
+    // Verificar si han pasado 5 segundos
+    if (millis() - tiempoInicioMuestreo >= DURACION_MUESTREO) {
+      muestreoActivo1 = !muestreoActivo1;  // Detener el muestreo después de 5 segundos
+      led.clear();
+    led.setCursor(0,0);
+    led.print("Datos tomados");
+    Serial.print("Datos tomados");
+    delay(1000);
+    }
+  } else {
+    led.clear();
+  }
+
+  // Botón 2: mostrar la amplitud y luego la frecuencia
+  if (digitalRead(entryboton2) == LOW) {
+    muestreoActivo2 = !muestreoActivo2;
+    tiempoUltimoCruceMedio = millis();  // Reiniciar el tiempo del último cálculo
+  }
+
+  if (muestreoActivo2) {
+    if (arreglo_datos != nullptr && *pcant_datos > 0) {
+      actualizarMaximoMinimo(arreglo_datos, *pcant_datos, punt_amplitudmayor, punt_amplitudmenor);
+      *punt_volt = (*punt_amplitudmayor - *punt_amplitudmenor) / 200.0;
+      valorMedio = (*punt_amplitudmayor + *punt_amplitudmenor) / 2.0;  // Calcular el valor medio
+
+      // Mostrar la amplitud
+      led.clear();
+      led.setCursor(0, 0);
+      Serial.print("Amplitud: ");
+      Serial.println(*punt_volt, 2);
+      led.print("Amplitud: ");
+      led.setCursor(0, 1);
+      led.print(*punt_volt, 2);
+      led.print(" V");
+
+      delay(500);
+      led.clear();
+      Serial.print("Intervalo frecuencia medio: ");
+  
