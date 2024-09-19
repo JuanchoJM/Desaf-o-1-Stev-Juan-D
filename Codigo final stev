@@ -1,0 +1,319 @@
+#include <LiquidCrystal.h>
+// Declaración de variables globales
+int val,leepin,estadobot1,estadobot2;
+int  estadobotonant1=HIGH, estadobotonant2=HIGH;
+int entradabot1=8,entradabot2=7;
+int *punt, *analogpin, *entryboton1, *entryboton2;
+int *cant_datos, *transcurrido, *start; 
+float *punt_frec, *amplitudmayor, *amplitudmenor, *punt_volt; 
+int *valorMedio;
+float *punt_valM;
+int *estadoboton1, *estadoboton2;
+int *estadobotonanterior1, *estadobotonanterior2;
+bool muestreoActivo1 = false, muestreoActivo2 = false;
+unsigned long tiempoInicioMuestreo = 0;
+const unsigned long DURACION_MUESTREO = 3000;
+LiquidCrystal led(12, 11, 5, 4, 3, 2);
+float *cuantasVecesPaso;
+int* arreglo_datos = nullptr;
+
+
+// Variables para detección de cruces por el valor medio
+unsigned long tiempoUltimoCruceMedio = 0;
+unsigned long intervaloFrecuenciaMedio = 0;
+bool cruzoPorMedioAnterior = false;
+
+// Función para agregar un dato al arreglo dinámico
+void agregarDato(int* punt) {
+  int* nuevo_arreglo = new int[(*cant_datos) + 1];
+  for (int i = 0; i < *cant_datos; i++) {
+    nuevo_arreglo[i] = arreglo_datos[i];
+  }
+  nuevo_arreglo[*cant_datos] = *punt;
+  (*cant_datos)++;
+  delete[] arreglo_datos;
+  arreglo_datos = nuevo_arreglo;
+}
+
+// Función para imprimir los valores almacenados en el arreglo
+void imprimirArreglo() {
+  Serial.print("Valores almacenados: ");
+  for (int i = 0; i < *cant_datos; i++) {
+    Serial.print(arreglo_datos[i]);
+    if (i < (*cant_datos) - 1) {
+      Serial.print(", ");
+    }
+  }
+  Serial.println();
+}
+
+// Función para actualizar los valores máximo y mínimo en el arreglo
+void actualizarMaximoMinimo(int* arreglo, int tamano, float* maximo, float* minimo) {
+  *maximo = arreglo[0];
+  *minimo = arreglo[0];
+  
+  for (int i = 1; i < tamano; i++) {
+    if (arreglo[i] > *maximo) {
+      *maximo = arreglo[i];
+    }
+    if (arreglo[i] < *minimo) {
+      *minimo = arreglo[i];
+    }
+  }
+}
+
+// Función para detectar cruce por el valor medio
+void detectarCrucePorMedio(int *valor_actual) {
+  static int valorAnterior = 0;  // Guardar el valor de la lectura anterior
+    // Contador de cruces por el valor medio
+  bool cruzoPorMedio = false;
+  
+  // Comprobar si hay un cruce por el valor medio
+  if ((valorAnterior <*valorMedio  && *valor_actual >= *valorMedio) || 
+      (valorAnterior > *valorMedio && *valor_actual <= *valorMedio)) {
+    cruzoPorMedio = true;
+  }
+
+  // Si hay un cruce por el valor medio y no ha habido un cruce previo inmediato
+  if (cruzoPorMedio && !cruzoPorMedioAnterior) {
+    (*cuantasVecesPaso)++;  // Incrementar el contador de cruces
+         // Intervalo ciclo
+    }
+  
+
+  // Actualizar el estado para el siguiente ciclo
+   valorAnterior = *valor_actual;
+   cruzoPorMedioAnterior = cruzoPorMedio;
+}
+
+
+// Función para identificar la forma de la señal
+void formasignal() {
+  bool esCuadrada = false;
+  bool esTriangular = false;
+  bool esSenoidal=false;
+  
+  for (int i=1 ; i < *cant_datos; i++) {  // Inicializar i aquí
+    if (arreglo_datos[i] == arreglo_datos[i-1]) {
+      if(arreglo_datos[i]!=1023){
+        esCuadrada = true;}
+    }
+  }
+
+ int umbral = 10; 
+      if (abs(arreglo_datos[1] - arreglo_datos[0]) > umbral ) {
+        
+      esSenoidal=true; // Si el cambio no es mas que la triangular, no es sinusoidal
+   
+           }      
+    if (abs(arreglo_datos[1] - arreglo_datos[0]) < umbral && esCuadrada==false) {
+      esTriangular=true; // Si el cambio es br/usco, no es triangular
+    }
+  
+  
+  
+  led.clear();
+  
+  if (esCuadrada) {
+    led.setCursor(0, 0);
+    led.print("Onda Cuadrada");
+    led.setCursor(0,1);
+    led.print("tomando datos...");
+    Serial.println("La señal es cuadrada");
+    
+    
+  } else if (esTriangular) {
+    led.setCursor(0, 0);
+    led.print("Onda Triangular");
+    led.setCursor(0,1);
+    led.print("tomando datos...");
+    Serial.println("Signal es triangular");
+  } else if(esSenoidal){
+    led.setCursor(0, 0);
+    led.print("Onda Senoidal");
+    led.setCursor(0,1);
+    led.print("tomando datos...");
+    Serial.println("Signal es Senoidal");
+  }
+  else {
+    led.setCursor(0, 0);
+    led.print("Onda desc.");
+    Serial.println("La onda es indefinida");
+  }
+}
+  
+void reiniciarsistema()
+{
+  arreglo_datos=new int();
+  cant_datos = new int(0);
+  transcurrido = new int(0);
+  start = new int(0);
+  cuantasVecesPaso= new float(0);
+  punt_frec = new float(0.0);
+  amplitudmayor = new float(0.0);
+  amplitudmenor = new float(0.0);
+  punt_volt = new float(0.0);
+  valorMedio = new int(0);
+  punt_valM = new float(0.0);
+}
+void setup() {
+ led.begin(16, 2);
+  Serial.begin(9600);
+
+  // Inicialización dinámica de variables
+  punt = &val;
+  analogpin = &leepin;
+  entryboton1 = &entradabot1;
+  entryboton2 = &entradabot2;
+  cant_datos = new int(0);
+  transcurrido = new int(0);
+  start = new int(0);
+  cuantasVecesPaso= new float(0);
+  punt_frec = new float(0.0);
+  amplitudmayor = new float(0.0);
+  amplitudmenor = new float(0.0);
+  punt_volt = new float(0.0);
+  valorMedio = new int(0);
+  punt_valM = new float(0.0);
+  estadoboton1 = &estadobot1;
+  estadoboton2 = &estadobot2; 
+  estadobotonanterior1 =  &estadobotonant1; // Inicializar con HIGH
+  estadobotonanterior2 =  &estadobotonant2; // Inicializar con HIGH
+  
+  // Configuración de pines
+  pinMode(*entryboton1, INPUT_PULLUP);
+  pinMode(*entryboton2, INPUT_PULLUP);
+  
+  // Inicialización del LCD
+  led.clear();
+}
+
+void loop() {
+  *estadoboton1 = digitalRead(*entryboton1);
+  *estadoboton2 = digitalRead(*entryboton2);
+  
+  if (*estadoboton1 == LOW && *estadobotonanterior1 == HIGH) {
+    // Cambiar el estado de muestreo cuando se presiona el botón
+    if (!muestreoActivo1) {  
+        muestreoActivo1 = true;  // Iniciar el muestreo
+        tiempoInicioMuestreo = millis();  // Registrar el tiempo de inicio
+        led.clear();
+        led.setCursor(0, 0);
+        led.print("Muestreo Activo");
+        delay(200);  // Pequeño retardo para evitar rebote del botón
+    } else {
+        muestreoActivo1 = false;  // Detener el muestreo si se presiona de nuevo
+        
+        led.setCursor(0, 0);
+        led.print("Muestreo Detenido");
+        Serial.println("Muestreo Detenido");
+        
+        delay(2000);  // Pequeño retardo para evitar rebote del botón
+        led.clear();
+    }
+    
+  }
+
+  if (muestreoActivo1) {
+    *punt = analogRead(*analogpin); 
+    agregarDato(punt);
+    actualizarMaximoMinimo(arreglo_datos, *cant_datos, amplitudmayor, amplitudmenor);
+    *valorMedio = (*amplitudmayor + *amplitudmenor) / 2.0;  // Leer el valor del pin analógico
+    detectarCrucePorMedio(punt);     // Detectar cruces por el valor medio
+    imprimirArreglo();// Almacenar el valor leído
+    delay(5);
+    
+
+    // Verificar si ha pasado el tiempo máximo de muestreo
+    if (millis() - tiempoInicioMuestreo >= DURACION_MUESTREO) {
+        muestreoActivo1 = false;  // Detener el muestreo cuando el tiempo ha pasado
+        led.clear();
+        led.setCursor(0, 0);
+        led.print("Tiempo max alcanzado");
+        Serial.println("Tiempo Maximo Alcanzado");
+        delay(2000);//  // Pequeño retardo para evitar problemas con el botón
+        led.clear();
+      
+    }
+  }
+
+  if (*estadoboton2 == LOW && *estadobotonanterior2 == HIGH) {
+    muestreoActivo2 = !muestreoActivo2;  // Cambiar el estado de mostrarAmplitud
+    delay(300);  // Añadir un pequeño delay para evitar reactivaciones rápidas del botón
+  
+
+  if (muestreoActivo2 && arreglo_datos != nullptr && *cant_datos > 0) {
+    actualizarMaximoMinimo(arreglo_datos, *cant_datos, amplitudmayor, amplitudmenor);
+    *punt_volt = (*amplitudmayor - *amplitudmenor) / 200.0;
+      // Frecuencia en Hz
+    
+    *punt_frec=1000/(DURACION_MUESTREO/( ((*cuantasVecesPaso)+1)*2));
+    
+    
+    led.clear();
+    led.setCursor(0, 0);
+    led.print("Amplitud: ");
+    led.setCursor(0, 1);
+    led.print(*punt_volt, 2);
+    led.print(" V");
+    delay(2000);
+
+    led.clear();
+    Serial.print("Paso estas veces por el medio \n");
+    Serial.println(*cuantasVecesPaso);
+    led.print("Cuantvec pasoM");
+    led.setCursor(0,1);
+    led.print(*cuantasVecesPaso);
+    delay(2000);
+    led.clear();
+    led.setCursor(0, 0);
+    led.print("Frecuencia:");
+    led.setCursor(0, 1);
+    led.print(*punt_frec);
+    led.print(" Hz");
+    delay(2000);
+    led.clear();
+    formasignal();
+  }
+    else {
+        muestreoActivo2 = false;  // Detener el muestreo si se presiona de nuevo
+        
+        led.setCursor(0, 0);
+        led.print("Liberando mem");
+        Serial.print("Liberando memoria   \n");
+        delay(1000);
+
+        led.clear();
+        led.print("Reiniciando sistema");
+        Serial.print("Reiniciando sistema");
+        
+        delay(2000);  // Pequeño retardo para evitar rebote del botón
+        led.clear();
+       liberarMemoria();
+       reiniciarsistema();
+ 		
+    }
+  }
+  *estadobotonanterior1 = *estadoboton1;
+  *estadobotonanterior2 = *estadoboton2;
+
+  
+}
+
+
+// Liberar memoria dinámica
+void liberarMemoria() {
+  delete cant_datos;
+  delete transcurrido;
+  delete start;
+  delete punt_frec;
+  delete amplitudmayor;
+  delete amplitudmenor;
+  delete punt_volt;
+  delete valorMedio;
+  delete punt_valM;
+  if (arreglo_datos != nullptr) {
+    delete[] arreglo_datos;
+  }
+ 
+}
